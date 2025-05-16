@@ -1,0 +1,280 @@
+#| label: tbl-effect-sizes
+#| tbl-cap: "Summary of Effect Sizes and Power Analysis"
+
+
+library(kableExtra)
+
+# Statistical Power Summary
+effect_summary_1 <- data.frame(
+  Metric = c("Work Productivity (OSS)"),
+  Current_Baseline = c("70 (OSS score)"),
+  Target_With_Treatment = c("80 (OSS score)"),
+  Minimum_Effect = c("10-point increase"),
+  Required_Sample_Size = c("23 per group"), 
+  Statistical_Power = c("90%")
+)
+
+kable(effect_summary_1,
+      caption = "Summary of Effect Sizes and Power Analysis for Work Productivity") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+effect_summary_2 <- data.frame(
+  Metric = c("Subjective Energy Levels"),
+  Current_Baseline = c("5 (No-Nap Group)"),
+  Target_With_Treatment = c("6.5 (15-Minute Nap Group)"),
+  Minimum_Effect = c("1.5-point increase"),
+  Required_Sample_Size = c("34 per group"), 
+  Statistical_Power = c("90%")
+)
+
+kable(effect_summary_2) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+# Sample Size and Power Analysis Q1
+# Does a 15-minute nap help improve work productivity compared to no nap?
+
+productivity_n <- power.t.test(
+  delta = 10,  # expected difference (10-point increase)
+  sd = 10,     # standard deviation (OSS score)
+  sig.level = 0.05,
+  power = 0.90,
+  type = "two.sample"
+)
+
+sample_calculations_1 <- data.frame(
+  Metric = c("Work Productivity (OSS)"),
+  Required_N = c(ceiling(productivity_n$n)),
+  Baseline = c("70 (OSS score)"),
+  Expected_Effect = c("10-point increase"),
+  Power = c("90%")
+)
+
+
+kable(sample_calculations_1,
+      caption = "Minimum Required Sample Sizes for Work Productivity") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+# Sample Size and Power Analysis Q2
+# Does a 15-minute nap help improve subjective energy levels compared to no nap?
+  
+energy_n <- power.t.test(
+  delta = 1.5,  # expected difference in subjective energy levels
+  sd = 2,       # assumed standard deviation
+  sig.level = 0.05,
+  power = 0.90,
+  type = "two.sample"
+)
+
+sample_calculations_2 <- data.frame(
+  Metric = c("Subjective Energy Levels"),
+  Required_N = c(ceiling(energy_n$n)),
+  Baseline = c("5 (No-Nap Group)"),
+  Expected_Effect = c("1.5-point increase"),
+  Power = c("90%")
+)
+
+kable(sample_calculations_2,
+      caption = "Minimum Required Sample Size for Subjective Energy Study") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+
+
+
+#####################################################################
+
+# Function for productivity simulations (using t-test)
+
+set.seed(135)
+
+simulate_productivity <- function(n_per_group, is_effect = FALSE) {
+  # Control group: mean OSS score of 70, SD = 10
+  control <- rnorm(n_per_group, mean = 70, sd = 10)
+  
+  # Treatment group
+  treatment_mean <- if(is_effect) 80 else 70
+  treatment <- rnorm(n_per_group, mean = treatment_mean, sd = 10)
+  
+  # Perform t-test
+  test <- t.test(control, treatment, var.equal = TRUE)
+  
+  # Effect size
+  effect_size <- mean(treatment) - mean(control)
+  
+  return(list(p_value = test$p.value, effect = effect_size))
+}
+
+# Function for subjective energy simulations (using t-test)
+simulate_energy <- function(n_per_group, is_effect = FALSE) {
+  # Control group: mean energy level of 5, SD = 2
+  control <- rnorm(n_per_group, mean = 5, sd = 2)
+  
+  # Treatment group
+  treatment_mean <- if(is_effect) 6.5 else 5
+  treatment <- rnorm(n_per_group, mean = treatment_mean, sd = 2)
+  
+  # Perform t-test
+  test <- t.test(control, treatment, var.equal = TRUE)
+  
+  # Effect size
+  effect_size <- mean(treatment) - mean(control)
+  
+  return(list(p_value = test$p.value, effect = effect_size))
+}
+
+# Run simulations
+n_sims <- 10000
+productivity_n <- 39  # Sample size for productivity study
+energy_n <- 39        # Sample size for energy study
+
+# Storage for results
+results <- list(
+  prod_null = replicate(n_sims, simulate_productivity(productivity_n, FALSE)),
+  prod_effect = replicate(n_sims, simulate_productivity(productivity_n, TRUE)),
+  energy_null = replicate(n_sims, simulate_energy(energy_n, FALSE)),
+  energy_effect = replicate(n_sims, simulate_energy(energy_n, TRUE))
+)
+
+# Process results
+get_stats <- function(sims, null = TRUE) {
+  p_values <- unlist(sims[1,])
+  effects <-  unlist(sims[2,])
+  
+  list(
+    mean_effect = mean(effects),
+    ci_low = quantile(effects, 0.025),
+    ci_high = quantile(effects, 0.975),
+    false_pos = if(null) mean(p_values < 0.05) * 100 else NA,
+    true_neg = if(null) mean(p_values >= 0.05) * 100 else NA,
+    false_neg = if(!null) mean(p_values >= 0.05) * 100 else NA,
+    true_pos = if(!null) mean(p_values < 0.05) * 100 else NA
+  )
+}
+
+# Calculate statistics
+stats <- list(
+  prod_null = get_stats(results$prod_null, TRUE),
+  prod_effect = get_stats(results$prod_effect, FALSE),
+  energy_null = get_stats(results$energy_null, TRUE),
+  energy_effect = get_stats(results$energy_effect, FALSE)
+)
+
+# Create table summarizing results
+results_table <- data.frame(
+  row = 1:4,
+  Research_Question = c(
+    "Question 1 (Work Productivity)", "Question 1 (Work Productivity)",
+    "Question 2 (Energy Levels)", "Question 2 (Energy Levels)"
+  ),
+  Scenario = c(
+    "No Effect", 
+    "Effect: 10-point OSS increase",
+    "No Effect", 
+    "Effect: 1.5-point energy level increase"
+  ),
+  Mean_Effect = c(
+    sprintf("%.2f", stats$prod_null$mean_effect),
+    sprintf("%.2f", stats$prod_effect$mean_effect),
+    sprintf("%.2f", stats$energy_null$mean_effect),
+    sprintf("%.2f", stats$energy_effect$mean_effect)
+  ),
+  CI = c(
+    sprintf("(%.2f, %.2f)", stats$prod_null$ci_low, stats$prod_null$ci_high),
+    sprintf("(%.2f, %.2f)", stats$prod_effect$ci_low, stats$prod_effect$ci_high),
+    sprintf("(%.2f, %.2f)", stats$energy_null$ci_low, stats$energy_null$ci_high),
+    sprintf("(%.2f, %.2f)", stats$energy_effect$ci_low, stats$energy_effect$ci_high)
+  ),
+  False_Positives = c(
+    sprintf("%.1f%%", stats$prod_null$false_pos),
+    "N/A",
+    sprintf("%.1f%%", stats$energy_null$false_pos),
+    "N/A"
+  ),
+  True_Negatives = c(
+    sprintf("%.1f%%", stats$prod_null$true_neg),
+    "N/A",
+    sprintf("%.1f%%", stats$energy_null$true_neg),
+    "N/A"
+  ),
+  False_Negatives = c(
+    "N/A",
+    sprintf("%.1f%%", stats$prod_effect$false_neg),
+    "N/A",
+    sprintf("%.1f%%", stats$energy_effect$false_neg)
+  ),
+  True_Positives = c(
+    "N/A",
+    sprintf("%.1f%%", stats$prod_effect$true_pos),
+    "N/A",
+    sprintf("%.1f%%", stats$energy_effect$true_pos)
+  )
+)
+
+# Display results table
+kable(results_table,
+      col.names = c("", "Research Question", "Scenario",
+                    "Mean Effect in Simulated Data",
+                    "95% Confidence Interval of Mean Effect",
+                    "Percentage of False Positives",
+                    "Percentage of True Negatives",
+                    "Percentage of False Negatives",
+                    "Percentage of True Positives"),
+      align = c('r', 'l', 'l', 'r', 'r', 'c', 'c', 'c', 'c')) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+###############################################################################
+#Visualization 1: Simulated Distribution of Work Productivity Scores (OSS)
+
+library(ggplot2)
+
+# Parameters for simulation
+set.seed(123)
+n_sims <- 10000
+oss_null_effect <- rnorm(n_sims, mean = 0, sd = 10)  # Null scenario
+oss_effect <- rnorm(n_sims, mean = 10, sd = 10)      # Effect scenario
+
+# Combine data for ggplot
+oss_data <- data.frame(
+  Effect_Size = c(oss_null_effect, oss_effect),
+  Scenario = c(rep("Null (No Effect)", n_sims), rep("Effect (10-point OSS increase)", n_sims))
+)
+
+# Plot
+ggplot(oss_data, aes(x = Effect_Size, fill = Scenario)) +
+  geom_histogram(aes(y = ..density..), bins = 50, alpha = 0.5, position = "identity") +
+  geom_vline(xintercept = 0, color = "blue", linetype = "dashed", linewidth = 1, label = "Null Mean (0)") +
+  geom_vline(xintercept = 10, color = "orange", linetype = "dashed", linewidth = 1, label = "Effect Mean (10)") +
+  scale_fill_manual(values = c("blue", "orange")) +
+  labs(
+    title = "Simulated Distribution of Work Productivity Scores (OSS)",
+    x = "Effect Size (OSS)",
+    y = "Density",
+    fill = "Scenario"
+  ) +
+  theme_minimal()
+
+# Visualization 2: Simulated Distribution of Subjective Energy Levels
+# Parameters for simulation
+set.seed(123)
+energy_null_effect <- rnorm(n_sims, mean = 0, sd = 2)  # Null scenario
+energy_effect <- rnorm(n_sims, mean = 1.5, sd = 2)     # Effect scenario
+
+# Combine data for ggplot
+energy_data <- data.frame(
+  Effect_Size = c(energy_null_effect, energy_effect),
+  Scenario = c(rep("Null (No Effect)", n_sims), rep("Effect (1.5-point increase)", n_sims))
+)
+
+# Plot
+ggplot(energy_data, aes(x = Effect_Size, fill = Scenario)) +
+  geom_histogram(aes(y = ..density..), bins = 50, alpha = 0.5, position = "identity") +
+  geom_vline(xintercept = 0, color = "green", linetype = "dashed", linewidth = 1, label = "Null Mean (0)") +
+  geom_vline(xintercept = 1.5, color = "red", linetype = "dashed", linewidth = 1, label = "Effect Mean (1.5)") +
+  scale_fill_manual(values = c("green", "red")) +
+  labs(
+    title = "Simulated Distribution of Subjective Energy Levels",
+    x = "Effect Size (Energy Levels)",
+    y = "Density",
+    fill = "Scenario"
+  ) +
+  theme_minimal()
+
